@@ -5,7 +5,7 @@
 import os
 import pandas as pd
 import numpy as np
-import streamlit as st
+import gradio as gr
 from config import PARAMETERS, IDENTITY_COLS, SPEC_PATH
 
 
