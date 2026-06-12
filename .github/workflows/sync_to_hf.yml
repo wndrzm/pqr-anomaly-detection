@@ -2,7 +2,7 @@ name: Sync to Hugging Face Spaces
 
 on:
   push:
-    branches: [ main ] # Ubah ke master jika branch utamamu namanya master
+    branches: [ main, master ] # Triggers on both main or master branch pushes
 
 jobs:
   deploy:
@@ -14,9 +14,20 @@ jobs:
           fetch-depth: 0
           lfs: true
 
+      - name: Configure Git Credentials
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
       - name: Push to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git remote add hf https://huggingface.co/spaces/harujionhitori/pqr-anomaly-detection
-          git push --force hf main
+          # Dynamically detect current branch name (main or master)
+          CURRENT_BRANCH=$(git branch --show-current)
+          
+          # Add Hugging Face space repository as a remote endpoint using authentication token
+          git remote add hf https://harujionhitori:$HF_TOKEN@huggingface.co/spaces/harujionhitori/pqr-anomaly-detection
+          
+          # Force push the current branch to Hugging Face's main branch
+          git push --force hf "$CURRENT_BRANCH":main
