@@ -1,5 +1,5 @@
 # =============================================================================
-# app_gradio.py — PQR Anomaly Detection Dashboard (Gradio version)
+# app.py — PQR Anomaly Detection Dashboard (Gradio version)
 # Drop-in replacement for app.py (Streamlit)
 # =============================================================================
 
