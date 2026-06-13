@@ -8,14 +8,12 @@ import numpy as np
 import io
 import sys
 import os
-import mlflow
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 from config import (
     PARAMETERS, DEFAULT_DATASET, STATUS_ORDER, COLOR_MAP, VOTE_WEIGHTS,
     WEIGHTED_THRESHOLD, ZSCORE_THRESHOLD, CUSUM_K, CUSUM_H,
-    IF_CONTAMINATION, AE_EPOCHS, AE_THRESHOLD_SIGMA, T2_ALPHA,
 )
 from modules.data_loader   import run_data_pipeline
 from modules.fraud         import detect_fraud, get_fraud_summary
@@ -32,12 +30,6 @@ from modules.charts        import (
     plot_agreement_heatmap, plot_status_summary,
     plot_ae_vs_t2, plot_trend_line, plot_cusum,
 )
-
-# =============================================================================
-# MLflow Setup
-# =============================================================================
-
-mlflow.set_experiment("PQR_Anomaly_Detection")
 
 # =============================================================================
 # GLOBAL STATE
@@ -64,106 +56,65 @@ EMPTY_STATE = {
 # =============================================================================
 
 def run_pipeline(uploaded_file, use_demo, state):
-    log   = []
+    log  = []
     state = dict(state)
 
-    with mlflow.start_run(run_name="PQR_Full_Pipeline"):
+    try:
+        log.append('📂 Loading and validating data...')
+        result = run_data_pipeline(
+            uploaded_file = None if use_demo == 'Use synthetic demo dataset' else uploaded_file,
+            default_path  = DEFAULT_DATASET,
+        )
+        df       = result['df']
+        products = list(result['products'])
+        if result['missing_report']:
+            log.append(f"⚠️  Missing values filled: {result['missing_report']}")
+        log.append(f"✅ {result['spec_status']}")
+    except Exception as e:
+        return state, f'❌ Data loading failed: {e}', *_empty_outputs()
 
-        # Log all config params at the start
-        mlflow.log_params({
-            "vote_weight_zscore":      VOTE_WEIGHTS['zscore'],
-            "vote_weight_iforest":     VOTE_WEIGHTS['iforest'],
-            "vote_weight_autoencoder": VOTE_WEIGHTS['autoencoder'],
-            "vote_weight_hotelling":   VOTE_WEIGHTS['hotelling'],
-            "weighted_threshold":      WEIGHTED_THRESHOLD,
-            "zscore_threshold":        ZSCORE_THRESHOLD,
-            "if_contamination":        IF_CONTAMINATION,
-            "ae_epochs":               AE_EPOCHS,
-            "ae_threshold_sigma":      AE_THRESHOLD_SIGMA,
-            "t2_alpha":                T2_ALPHA,
-            "data_source":             "demo" if use_demo == "Use synthetic demo dataset" else "uploaded",
-        })
+    log.append('🔍 Running fraud detection...')
+    df = detect_fraud(df)
+    fraud_summary = get_fraud_summary(df)
+    log.append(f"{'⚠️  ' + str(fraud_summary['total_flagged']) + ' batch(es) flagged' if fraud_summary['total_flagged'] > 0 else '✅ No fraud detected'}")
 
-        try:
-            log.append('📂 Loading and validating data...')
-            result = run_data_pipeline(
-                uploaded_file = None if use_demo == 'Use synthetic demo dataset' else uploaded_file,
-                default_path  = DEFAULT_DATASET,
-            )
-            df       = result['df']
-            products = list(result['products'])
-            if result['missing_report']:
-                log.append(f"⚠️  Missing values filled: {result['missing_report']}")
-            log.append(f"✅ {result['spec_status']}")
+    log.append('⚙️  Preprocessing...')
+    scalers, scaled_dict = run_preprocessing(df, products)
 
-            mlflow.log_param("n_products", len(products))
-            mlflow.log_param("products", str(products))
-            mlflow.log_metric("total_batches", len(df))
+    log.append('📊 Running Z-Score & Isolation Forest...')
+    df_zs_if = run_zscore_iforest(df, products, scaled_dict)
 
-        except Exception as e:
-            mlflow.set_tag("pipeline_status", "FAILED_data_loading")
-            return state, f'❌ Data loading failed: {e}', *_empty_outputs()
+    log.append('🧠 Training Autoencoder...')
+    df_ae, ae_results = run_autoencoder_all(df, products, scaled_dict)
 
-        log.append('🔍 Running fraud detection...')
-        df            = detect_fraud(df)
-        fraud_summary = get_fraud_summary(df)
-        log.append(f"{'⚠️  ' + str(fraud_summary['total_flagged']) + ' batch(es) flagged' if fraud_summary['total_flagged'] > 0 else '✅ No fraud detected'}")
-        mlflow.log_metric("fraud_flagged_batches",   fraud_summary['total_flagged'])
-        mlflow.log_metric("fraud_exact_duplicates",  fraud_summary['exact_duplicates'])
-        mlflow.log_metric("fraud_near_duplicates",   fraud_summary['near_duplicates'])
-        mlflow.log_metric("fraud_suspicious_rounding", fraud_summary['suspicious_rounding'])
+    log.append('📐 Running Hotelling T²...')
+    df_t2, t2_params = run_hotelling_all(df, products, scaled_dict)
 
-        log.append('⚙️  Preprocessing...')
-        scalers, scaled_dict = run_preprocessing(df, products)
+    log.append('🗳️  Computing ensemble scores...')
+    merged = merge_results(df, df_zs_if, df_ae, df_t2)
+    merged = run_ensemble(merged)
+    ensemble_summary = get_ensemble_summary(merged)
 
-        log.append('📊 Running Z-Score & Isolation Forest...')
-        df_zs_if = run_zscore_iforest(df, products, scaled_dict)
+    log.append('⚠️  Risk Contextualization & Trend Analysis...')
+    flagged  = merged[merged['final_status'] != '✅ Normal'].copy()
+    risk_df  = compute_risk_context(df, flagged)
+    trend_df = run_trend_analysis(df)
 
-        log.append('🧠 Training Autoencoder...')
-        df_ae, ae_results = run_autoencoder_all(df, products, scaled_dict)
+    log.append('🏭 Process Capability Analysis...')
+    cap_df = run_capability_analysis(df)
 
-        log.append('📐 Running Hotelling T²...')
-        df_t2, t2_params = run_hotelling_all(df, products, scaled_dict)
+    log.append('🎯 Model Evaluation...')
+    eval_df = run_evaluation(merged)
 
-        log.append('🗳️  Computing ensemble scores...')
-        merged           = merge_results(df, df_zs_if, df_ae, df_t2)
-        merged           = run_ensemble(merged)
-        ensemble_summary = get_ensemble_summary(merged)
+    log.append('✅ Analysis complete!')
 
-        # Log ensemble results
-        counts = ensemble_summary['counts']
-        mlflow.log_metric("confirmed_anomalies", counts.get('🔴 Confirmed Anomaly — Investigate & CAPA', 0))
-        mlflow.log_metric("suspected_anomalies", counts.get('🟠 Suspected Anomaly — Enhanced Monitoring', 0))
-        mlflow.log_metric("watchlist_batches",   counts.get('🟡 Watch List — Re-check Next Batch', 0))
-        mlflow.log_metric("data_fraud_batches",  counts.get('🔴 Data Fraud — Duplicate/Copy-Paste', 0))
-        mlflow.log_metric("normal_batches",      counts.get('✅ Normal', 0))
-
-        log.append('⚠️  Risk Contextualization & Trend Analysis...')
-        flagged  = merged[merged['final_status'] != '✅ Normal'].copy()
-        risk_df  = compute_risk_context(df, flagged)
-        trend_df = run_trend_analysis(df)
-
-        log.append('🏭 Process Capability Analysis...')
-        cap_df = run_capability_analysis(df)
-
-        log.append('🎯 Model Evaluation...')
-        eval_df      = run_evaluation(merged)
-        eval_summary = get_evaluation_summary(eval_df)
-        if eval_summary:
-            mlflow.log_metric("ensemble_precision", eval_summary['ensemble_precision'])
-            mlflow.log_metric("ensemble_recall",    eval_summary['ensemble_recall'])
-            mlflow.log_metric("ensemble_f1",        eval_summary['ensemble_f1'])
-
-        mlflow.set_tag("pipeline_status", "SUCCESS")
-        log.append('✅ Analysis complete!')
-
-        state.update({
-            'data_loaded': True, 'model_run': True,
-            'df': df, 'products': products, 'merged': merged,
-            'risk_df': risk_df, 'trend_df': trend_df, 'cap_df': cap_df,
-            'eval_df': eval_df, 'ae_results': ae_results, 'scaled_dict': scaled_dict,
-            'fraud_summary': fraud_summary, 'ensemble_summary': ensemble_summary,
-        })
+    state.update({
+        'data_loaded': True, 'model_run': True,
+        'df': df, 'products': products, 'merged': merged,
+        'risk_df': risk_df, 'trend_df': trend_df, 'cap_df': cap_df,
+        'eval_df': eval_df, 'ae_results': ae_results, 'scaled_dict': scaled_dict,
+        'fraud_summary': fraud_summary, 'ensemble_summary': ensemble_summary,
+    })
 
     return (state, '\n'.join(log)) + tuple(_build_outputs(state))
 
@@ -530,3 +481,94 @@ with gr.Blocks(title='PQR Anomaly Detection') as demo:
                 comp_status   = gr.Plot(label='Batch Status Distribution')
                 comp_ae_vs_t2 = gr.Plot(label='AE vs Hotelling T²')
             comp_agreement = gr.Plot(label='Detection Agreement Heatmap')
+            fraud_md       = gr.Markdown()
+            fraud_table    = gr.Dataframe(label='Flagged Fraud Batches')
+
+        # ── Tab 2: Anomaly Detail ─────────────────────────────────────────────
+        with gr.Tab('🔍 Anomaly Detail'):
+            tab2_product = gr.Dropdown(choices=[], label='Select product')
+            with gr.Row():
+                comp_ae_cc = gr.Plot(label='Autoencoder Control Chart')
+                comp_t2_cc = gr.Plot(label='Hotelling T² Control Chart')
+            flagged_table = gr.Dataframe(label='Flagged Batches')
+            tab2_product.change(fn=update_tab2, inputs=[tab2_product, state],
+                                outputs=[comp_ae_cc, comp_t2_cc, flagged_table])
+
+        # ── Tab 3: Risk Context ───────────────────────────────────────────────
+        with gr.Tab('⚠️ Risk Context'):
+            gr.Markdown('_How close are flagged batch parameters to specification limits?_')
+            tab3_product = gr.Dropdown(choices=[], label='Filter by product')
+            risk_table   = gr.Dataframe(label='Risk Context Table')
+            tab3_product.change(fn=update_tab3, inputs=[tab3_product, state], outputs=risk_table)
+
+        # ── Tab 4: Trends & CUSUM ─────────────────────────────────────────────
+        with gr.Tab('📈 Trends & CUSUM'):
+            trend_metrics_md   = gr.Markdown()
+            trend_alerts_table = gr.Dataframe(label='Parameters requiring attention')
+            with gr.Row():
+                tab4_product = gr.Dropdown(choices=[], label='Product')
+                tab4_param   = gr.Dropdown(choices=[], label='Parameter')
+            with gr.Tabs():
+                with gr.Tab('Mann-Kendall Trend'):
+                    comp_trend = gr.Plot()
+                    mk_info_md = gr.Markdown()
+                with gr.Tab('CUSUM Chart'):
+                    comp_cusum = gr.Plot()
+                    gr.Markdown(f'k = {CUSUM_K}σ | h = {CUSUM_H}σ | Reference: Montgomery (2009)')
+            for inp in [tab4_product, tab4_param]:
+                inp.change(fn=update_tab4, inputs=[tab4_product, tab4_param, state],
+                           outputs=[comp_trend, comp_cusum, mk_info_md])
+
+        # ── Tab 5: Capability ─────────────────────────────────────────────────
+        with gr.Tab('🏭 Capability'):
+            gr.Markdown('_Cp/Cpk per parameter per product._')
+            tab5_product = gr.Dropdown(choices=[], label='Filter by product')
+            cap_table    = gr.Dataframe(label='Capability Table')
+            tab5_product.change(fn=update_tab5, inputs=[tab5_product, state], outputs=cap_table)
+
+        # ── Tab 6: Model Performance ──────────────────────────────────────────
+        with gr.Tab('🎯 Model Performance'):
+            eval_metrics_md = gr.Markdown()
+            comp_eval   = gr.Plot(label='Precision / Recall / F1')
+            eval_table      = gr.Dataframe(label='Detailed Metrics')
+
+        # ── Tab 7: Executive Summary ──────────────────────────────────────────
+        with gr.Tab('📄 Executive Summary'):
+            exec_summary_text = gr.Textbox(label='Executive Summary', lines=20, interactive=False)
+            dl_txt_btn  = gr.Button('⬇️ Download as .txt')
+            dl_txt_file = gr.File(label='Download .txt')
+            dl_txt_btn.click(fn=save_exec_txt, inputs=exec_summary_text, outputs=dl_txt_file)
+
+        # ── Tab 8: Export ─────────────────────────────────────────────────────
+        with gr.Tab('💾 Export'):
+            with gr.Row():
+                dl_csv_btn   = gr.Button('⬇️ Download CSV')
+                dl_excel_btn = gr.Button('⬇️ Download Excel (all sheets)')
+            dl_csv_file   = gr.File(label='CSV')
+            dl_excel_file = gr.File(label='Excel')
+            preview_table = gr.Dataframe(label='Preview (first 20 rows)')
+            dl_csv_btn.click(fn=save_and_download_csv, inputs=state, outputs=dl_csv_file)
+            dl_excel_btn.click(fn=save_and_download_excel, inputs=state, outputs=dl_excel_file)
+
+    # ── Wire run button ───────────────────────────────────────────────────────
+    run_btn.click(
+        fn=run_pipeline,
+        inputs=[uploaded_file, use_demo, state],
+        outputs=[
+            state, run_log,
+            overview_metrics_md, comp_status, comp_ae_vs_t2, comp_agreement,
+            fraud_md, fraud_table,
+            tab2_product, comp_ae_cc, comp_t2_cc, flagged_table,
+            tab3_product, risk_table,
+            tab4_product, tab4_param,
+            trend_metrics_md, trend_alerts_table,
+            comp_trend, comp_cusum, mk_info_md,
+            tab5_product, cap_table,
+            eval_metrics_md, comp_eval, eval_table,
+            exec_summary_text,
+            preview_table,
+        ],
+    )
+
+if __name__ == '__main__':
+    demo.launch(server_name='0.0.0.0', server_port=7860, theme=gr.themes.Soft(), css=CSS)
