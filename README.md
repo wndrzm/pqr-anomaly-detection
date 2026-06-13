@@ -60,13 +60,15 @@ license: mit
 
 ### Run on Hugging Face Spaces
 Just open the Space — no installation needed.  
+👉 **[Live Demo](https://huggingface.co/spaces/harujionhitori/pqr-anomaly-detection)**
+
 Select **"Use synthetic demo dataset"** and click **🚀 Run Analysis**.
 
 ### Run Locally
 
 ```bash
 # 1. Clone the repo
-git clone https://huggingface.co/spaces/<your-username>/pqr-anomaly-detection
+git clone https://huggingface.co/spaces/harujionhitori/pqr-anomaly-detection
 cd pqr-anomaly-detection
 
 # 2. Install dependencies
@@ -78,6 +80,46 @@ python app.py
 ```
 
 > **Python 3.10+** is required. TensorFlow 2.16 requires pip ≥ 23.
+
+---
+
+## 🌐 Deployment
+
+This project is deployed as a live web application using the following stack:
+
+| Layer | Tool |
+|---|---|
+| Frontend & Serving | Gradio (SDK v6.18.0) |
+| Hosting Platform | Hugging Face Spaces |
+| CI/CD | Auto-deploy via GitHub ↔ Hugging Face Spaces sync |
+| Runtime | Python 3.11 |
+
+**Live URL:** https://huggingface.co/spaces/harujionhitori/pqr-anomaly-detection  
+**GitHub Repository:** https://github.com/wndrzm/pqr-anomaly-detection
+
+Any push to the `main` branch on GitHub automatically triggers a redeploy on Hugging Face Spaces — no manual deployment step required.
+
+---
+
+## 📌 Versioning
+
+### Code Versioning
+Managed via **Git** with full commit history available on GitHub.  
+Every change to model logic, preprocessing, or configuration is tracked and reversible.
+
+### Data Versioning
+| Version | Description |
+|---|---|
+| v1 | Initial synthetic dataset — 3 products, basic parameters |
+| v2 | Added fraud/duplicate batches |
+| v3 | Expanded to 101 batches, added embedded anomalies |
+| v4 | Added LSL/USL spec limit columns per parameter |
+| v5 *(current)* | Refined anomaly difficulty levels (easy / medium / hard) |
+
+Dataset files are versioned by filename (`dataset_pqr_v5.xlsx`) and tracked via GitHub commits.
+
+### Model Versioning
+Model configuration and ensemble weights are centrally managed in `config.py` and versioned alongside the codebase via Git commits. Each commit message documents parameter changes and their impact on model performance.
 
 ---
 
@@ -182,6 +224,16 @@ CUSUM_H = 5.0   # decision interval (h·σ)
 - **AIAG SPC Manual** — Statistical Process Control reference
 - **Mann-Kendall test** — non-parametric monotonic trend detection (α = 0.05)
 - **CUSUM** — cumulative sum control chart for mean shift detection
+
+---
+
+## 👩‍💻 Author
+
+**Wanda Rizqi Amaliah**, S.Farm., Apt.  
+Pharmacist × AI Engineer  
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue?logo=linkedin)](https://www.linkedin.com/in/wanda-rizqi-amaliah/)
+[![GitHub](https://img.shields.io/badge/GitHub-Profile-black?logo=github)](https://github.com/wndrzm)
+[![Hugging Face](https://img.shields.io/badge/🤗%20HuggingFace-Spaces-yellow)](https://huggingface.co/spaces/harujionhitori/pqr-anomaly-detection)
 
 ---
 
