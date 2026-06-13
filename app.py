@@ -435,7 +435,7 @@ CSS = """
 #run-btn { font-weight: 700; font-size: 1rem; }
 """
 
-with gr.Blocks(title='PQR Anomaly Detection', theme=gr.themes.Soft(), css=CSS) as demo:
+with gr.Blocks(title='PQR Anomaly Detection') as demo:
 
     state = gr.State(dict(EMPTY_STATE))
 
@@ -478,9 +478,9 @@ with gr.Blocks(title='PQR Anomaly Detection', theme=gr.themes.Soft(), css=CSS) a
         with gr.Tab('📊 Overview'):
             overview_metrics_md = gr.Markdown('_Run analysis to see results._')
             with gr.Row():
-                plot_status   = gr.Plot(label='Batch Status Distribution')
-                plot_ae_vs_t2 = gr.Plot(label='AE vs Hotelling T²')
-            plot_agreement = gr.Plot(label='Detection Agreement Heatmap')
+                comp_status   = gr.Plot(label='Batch Status Distribution')
+                comp_ae_vs_t2 = gr.Plot(label='AE vs Hotelling T²')
+            comp_agreement = gr.Plot(label='Detection Agreement Heatmap')
             fraud_md       = gr.Markdown()
             fraud_table    = gr.Dataframe(label='Flagged Fraud Batches')
 
@@ -488,11 +488,11 @@ with gr.Blocks(title='PQR Anomaly Detection', theme=gr.themes.Soft(), css=CSS) a
         with gr.Tab('🔍 Anomaly Detail'):
             tab2_product = gr.Dropdown(choices=[], label='Select product')
             with gr.Row():
-                plot_ae_cc = gr.Plot(label='Autoencoder Control Chart')
-                plot_t2_cc = gr.Plot(label='Hotelling T² Control Chart')
+                comp_ae_cc = gr.Plot(label='Autoencoder Control Chart')
+                comp_t2_cc = gr.Plot(label='Hotelling T² Control Chart')
             flagged_table = gr.Dataframe(label='Flagged Batches')
             tab2_product.change(fn=update_tab2, inputs=[tab2_product, state],
-                                outputs=[plot_ae_cc, plot_t2_cc, flagged_table])
+                                outputs=[comp_ae_cc, comp_t2_cc, flagged_table])
 
         # ── Tab 3: Risk Context ───────────────────────────────────────────────
         with gr.Tab('⚠️ Risk Context'):
@@ -510,14 +510,14 @@ with gr.Blocks(title='PQR Anomaly Detection', theme=gr.themes.Soft(), css=CSS) a
                 tab4_param   = gr.Dropdown(choices=[], label='Parameter')
             with gr.Tabs():
                 with gr.Tab('Mann-Kendall Trend'):
-                    plot_trend = gr.Plot()
+                    comp_trend = gr.Plot()
                     mk_info_md = gr.Markdown()
                 with gr.Tab('CUSUM Chart'):
-                    plot_cusum_fig = gr.Plot()
+                    comp_cusum = gr.Plot()
                     gr.Markdown(f'k = {CUSUM_K}σ | h = {CUSUM_H}σ | Reference: Montgomery (2009)')
             for inp in [tab4_product, tab4_param]:
                 inp.change(fn=update_tab4, inputs=[tab4_product, tab4_param, state],
-                           outputs=[plot_trend, plot_cusum_fig, mk_info_md])
+                           outputs=[comp_trend, comp_cusum, mk_info_md])
 
         # ── Tab 5: Capability ─────────────────────────────────────────────────
         with gr.Tab('🏭 Capability'):
@@ -529,7 +529,7 @@ with gr.Blocks(title='PQR Anomaly Detection', theme=gr.themes.Soft(), css=CSS) a
         # ── Tab 6: Model Performance ──────────────────────────────────────────
         with gr.Tab('🎯 Model Performance'):
             eval_metrics_md = gr.Markdown()
-            plot_eval_fig   = gr.Plot(label='Precision / Recall / F1')
+            comp_eval   = gr.Plot(label='Precision / Recall / F1')
             eval_table      = gr.Dataframe(label='Detailed Metrics')
 
         # ── Tab 7: Executive Summary ──────────────────────────────────────────
@@ -556,19 +556,19 @@ with gr.Blocks(title='PQR Anomaly Detection', theme=gr.themes.Soft(), css=CSS) a
         inputs=[uploaded_file, use_demo, state],
         outputs=[
             state, run_log,
-            overview_metrics_md, plot_status, plot_ae_vs_t2, plot_agreement,
+            overview_metrics_md, comp_status, comp_ae_vs_t2, comp_agreement,
             fraud_md, fraud_table,
-            tab2_product, plot_ae_cc, plot_t2_cc, flagged_table,
+            tab2_product, comp_ae_cc, comp_t2_cc, flagged_table,
             tab3_product, risk_table,
             tab4_product, tab4_param,
             trend_metrics_md, trend_alerts_table,
-            plot_trend, plot_cusum_fig, mk_info_md,
+            comp_trend, comp_cusum, mk_info_md,
             tab5_product, cap_table,
-            eval_metrics_md, plot_eval_fig, eval_table,
+            eval_metrics_md, comp_eval, eval_table,
             exec_summary_text,
             preview_table,
         ],
     )
 
 if __name__ == '__main__':
-    demo.launch(server_name='0.0.0.0', server_port=7860)
+    demo.launch(server_name='0.0.0.0', server_port=7860, theme=gr.themes.Soft(), css=CSS)
