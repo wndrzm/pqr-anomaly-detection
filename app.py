@@ -66,7 +66,7 @@ def run_pipeline(uploaded_file, use_demo, state):
             default_path  = DEFAULT_DATASET,
         )
         df       = result['df']
-        products = result['products']
+        products = list(result['products'])
         if result['missing_report']:
             log.append(f"⚠️  Missing values filled: {result['missing_report']}")
         log.append(f"✅ {result['spec_status']}")
